@@ -206,6 +206,7 @@ app.get("/send-otp", async (req, res) => {
         otpStore.set(clean(phone), otp);
 
         console.log("OTP:", phone, otp);
+        console.log("MEMBERSHIP VALUE:", clean(found["Гишүүнчлэл хүчинтэй"]));
 
         const smsResult = await sendSms(clean(phone), otp);
 
