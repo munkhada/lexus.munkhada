@@ -81,7 +81,6 @@ async function findUserByPhone(phone) {
 // ===== SEND SMS =====
 
 async function sendSms(phone, otp) {
-
     const message = encodeURIComponent(`Lexus Owners код: ${otp}`);
 
     const url =
@@ -95,10 +94,21 @@ async function sendSms(phone, otp) {
     console.log("SMS URL:", url);
 
     const response = await fetch(url);
-
     const text = await response.text();
 
+    console.log("SMS STATUS:", response.status);
     console.log("SMS RESPONSE:", text);
+
+    if (!response.ok) {
+        throw new Error(`SMS HTTP error: ${response.status} ${text}`);
+    }
+
+    if (
+        text.toLowerCase().includes("error") ||
+        text.toLowerCase().includes("failed")
+    ) {
+        throw new Error(`SMS gateway error: ${text}`);
+    }
 
     return text;
 }
