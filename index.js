@@ -145,7 +145,7 @@ app.get("/check-phone", async (req, res) => {
             });
         }
 
-        const membership = clean(found._rawData?.[7]);
+       const membership = clean(found["Гишүүнчлэл хүчинтэй"]);
 
         if (!isMembershipActive(membership)) {
             return res.json({
@@ -280,13 +280,13 @@ app.get("/verify-otp", async (req, res) => {
         return res.json({
             success: true,
             user: {
-                model: clean(found._rawData?.[0]),
-                vin: clean(found._rawData?.[1]),
-                ownerDate: clean(found._rawData?.[2]),
-                lastname: clean(found._rawData?.[3]),
-                firstname: clean(found._rawData?.[4]),
-                phone: clean(found._rawData?.[5]),
-                email: clean(found._rawData?.[6]),
+               model: clean(found["Model-Detail"]),
+                ownerDate: clean(found["Автомашин хүлээлгэж өгсөн огноо"]),
+                lastname: clean(found["Овог"]),
+                firstname: clean(found["Нэр"]),
+                phone: clean(found["Утасны дугаар"]),
+                email: clean(found["И-мэйл хаяг"]),
+                membership: clean(found["Гишүүнчлэл хүчинтэй"]),
                 membership: membership,
             },
         });
