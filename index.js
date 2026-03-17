@@ -38,7 +38,8 @@ function generateOtp() {
 
 function isMembershipActive(value) {
     const v = clean(value).toLowerCase();
-    return v === "хүчинтэй";
+    return v === "гишүүнчлэл хүчинтэй" || v === "хүчинтэй";
+
 }
 
 
