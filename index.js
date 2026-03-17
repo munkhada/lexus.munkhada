@@ -38,7 +38,7 @@ function generateOtp() {
 
 function isMembershipActive(value) {
     const v = clean(value).toLowerCase();
-    return v.includes("хүчинтэй");
+    return v === "хүчинтэй";
 }
 
 
