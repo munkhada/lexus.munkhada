@@ -170,10 +170,9 @@ app.get("/check-phone", async (req, res) => {
 
 // ===== SEND OTP =====
 
+
 app.get("/send-otp", async (req, res) => {
-
     try {
-
         const { phone } = req.query;
 
         if (!phone) {
@@ -207,21 +206,24 @@ app.get("/send-otp", async (req, res) => {
 
         console.log("OTP:", phone, otp);
 
-        await sendSms(clean(phone), otp);
-
-        return res.json({ success: true });
-
-    } catch (e) {
-
-        console.error("SEND OTP ERROR:", e);
+        const smsResult = await sendSms(clean(phone), otp);
 
         return res.json({
+            success: true,
+            message: "OTP ilgeegdlee",
+            smsResult: smsResult
+        });
+
+    } catch (e) {
+        console.error("SEND OTP ERROR:", e);
+
+        return res.status(500).json({
             success: false,
-            message: "OTP илгээж чадсангүй",
+            message: "OTP ilgeej chadsangui",
+            error: e.message || String(e)
         });
     }
 });
-
 
 // ===== VERIFY OTP =====
 
