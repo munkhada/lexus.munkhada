@@ -287,7 +287,7 @@ app.get("/verify-otp", async (req, res) => {
                 phone: clean(found["Утасны дугаар"]),
                 email: clean(found["И-мэйл хаяг"]),
                 membership: clean(found["Гишүүнчлэл хүчинтэй"]),
-                membership: membership,
+             
             },
         });
 
