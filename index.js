@@ -196,11 +196,14 @@ async function findUserByPhone(phone) {
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
-  secure: SMTP_PORT === 587,
+  secure: SMTP_PORT === 465,
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
   },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
 });
 
 async function sendOtpEmail(toEmail, otp, firstname = "") {
