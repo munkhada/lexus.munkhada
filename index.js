@@ -196,7 +196,7 @@ async function findUserByPhone(phone) {
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
-  secure: SMTP_PORT === 465,
+  secure: SMTP_PORT === 587,
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
