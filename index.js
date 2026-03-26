@@ -44,7 +44,12 @@ function normalizeKey(key) {
 
 function isMembershipActive(value) {
   const v = clean(value).toLowerCase();
-  return v.includes("хүчинтэй") && !v.includes("цуц");
+
+  if (!v) return false;
+  if (v.includes("цуц")) return false;
+  if (v.includes("хүчингүй")) return false;
+
+  return v.includes("хүчинтэй");
 }
 
 function rowToObj(row) {
@@ -283,23 +288,22 @@ app.get("/check-phone", async (req, res) => {
     if (!isMembershipActive(membership)) {
       return res.json({
         success: false,
-        message: "Нэвтрэх эрх дууссан байна",
-      });
-    }
-
-    const email = getEmailFromRow(found);
-
-    if (!email) {
-      return res.json({
-        success: false,
-        message: "И-мэйл хаяг бүртгэлгүй байна",
+        message: "Гишүүнчлэл хүчингүй",
       });
     }
 
     return res.json({
       success: true,
       membership,
-      emailMasked: maskEmail(email),
+      user: {
+        model: getModelFromRow(found),
+        ownerDate: getOwnerDateFromRow(found),
+        lastname: getLastnameFromRow(found),
+        firstname: getFirstnameFromRow(found),
+        phone: getPhoneFromRow(found),
+        email: getEmailFromRow(found),
+        membership,
+      },
     });
   } catch (e) {
     console.error("CHECK PHONE ERROR:", e);
@@ -340,7 +344,7 @@ app.get("/send-otp", async (req, res) => {
     if (!isMembershipActive(membership)) {
       return res.json({
         success: false,
-        message: "Нэвтрэх эрх дууссан байна",
+        message: "Гишүүнчлэл хүчингүй",
       });
     }
 
@@ -422,7 +426,7 @@ app.get("/verify-otp", async (req, res) => {
     if (!isMembershipActive(membership)) {
       return res.json({
         success: false,
-        message: "Нэвтрэх эрх дууссан байна",
+        message: "Гишүүнчлэл хүчингүй",
       });
     }
 
