@@ -1,459 +1,1046 @@
-import express from "express";
-import cors from "cors";
-import nodemailer from "nodemailer";
-import { GoogleSpreadsheet } from "google-spreadsheet";
-import { JWT } from "google-auth-library";
-
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-const PORT = process.env.PORT || 4000;
-const SHEET_ID = "1mDYRcroBWB9IR7W0mLwa-27qAY9wcaG1Y0RpiT4RU8A";
-
-const creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT || "{}");
-
-// ===== SMTP CONFIG =====
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
-
-// ===== OTP STORE =====
-const otpStore = new Map();
-
-// ===== HELPERS =====
-const clean = (v) => String(v ?? "").trim();
-
-function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: #0b0b0b;
+  color: #fff;
 }
 
-function normalizePhone(phone) {
-  let p = clean(phone).replace(/\D/g, "");
-  if (p.startsWith("976") && p.length > 8) {
-    p = p.slice(3);
-  }
-  return p;
+* {
+  box-sizing: border-box;
 }
 
-function normalizeKey(key) {
-  return clean(key).toLowerCase().replace(/\s+/g, " ");
+/* ===== LOGIN PAGE ===== */
+
+.login-page {
+  min-height: 100vh;
+  position: relative;
+  font-family: "Inter", sans-serif;
+  overflow: hidden;
 }
 
-function isMembershipActive(value) {
-  const v = clean(value).toLowerCase();
-
-  if (!v) return false;
-  if (v.includes("цуц")) return false;
-  if (v.includes("хүчингүй")) return false;
-
-  return v.includes("хүчинтэй");
+.login-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 40%, #1a1a1a 0%, #111 38%, #000 100%),
+    linear-gradient(to bottom, rgba(255,255,255,0.03), transparent),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.025), transparent);
 }
 
-function rowToObj(row) {
-  if (!row) return {};
-  if (typeof row.toObject === "function") {
-    return row.toObject();
-  }
-  return {};
+.login-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255,255,255,0.025), transparent 58%);
 }
 
-function getValueByPossibleKeys(row, possibleMatchers = []) {
-  const obj = rowToObj(row);
-
-  for (const key of Object.keys(obj)) {
-    const nk = normalizeKey(key);
-
-    for (const matcher of possibleMatchers) {
-      if (typeof matcher === "string" && nk === normalizeKey(matcher)) {
-        return clean(obj[key]);
-      }
-
-      if (matcher instanceof RegExp && matcher.test(nk)) {
-        return clean(obj[key]);
-      }
-
-      if (typeof matcher === "function" && matcher(nk, key)) {
-        return clean(obj[key]);
-      }
-    }
-  }
-
-  return "";
+.login-container {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(520px, 700px) minmax(320px, 380px);
+  align-items: center;
+  justify-content: center;
+  column-gap: 72px;
+  padding: 80px 56px;
 }
 
-function getPhoneFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    (nk) => nk.includes("утас"),
-    "утасны дугаар",
-    "утас",
-    "phone",
-    "phone number",
-  ]);
+.login-left {
+  max-width: 700px;
 }
 
-function getMembershipFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    (nk) => nk.includes("гишүүн"),
-    "гишүүнчлэл хүчинтэй",
-    "membership",
-    "status",
-  ]);
+.tag {
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  color: #7f7f7f;
+  margin-bottom: 18px;
 }
 
-function getModelFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    "model-detail",
-    "model detail",
-    (nk) => nk.includes("model"),
-  ]);
+.title {
+  font-size: 72px;
+  line-height: 0.96;
+  font-weight: 200;
+  margin: 0 0 30px 0;
+  letter-spacing: -0.04em;
 }
 
-function getOwnerDateFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    "автомашин хүлээлгэж өгсөн огноо",
-    (nk) => nk.includes("огноо"),
-    "owner date",
-    "date",
-  ]);
+.title span {
+  font-weight: 800;
+  font-style: italic;
 }
 
-function getLastnameFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    "овог",
-    "lastname",
-    "last name",
-  ]);
+.desc {
+  color: #a7a7a7;
+  max-width: 390px;
+  font-size: 17px;
+  line-height: 1.65;
 }
 
-function getFirstnameFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    "нэр",
-    "firstname",
-    "first name",
-  ]);
+.login-right {
+  width: 100%;
+  max-width: 380px;
+  justify-self: start;
 }
 
-function getEmailFromRow(row) {
-  return getValueByPossibleKeys(row, [
-    (nk) => nk.includes("и-мэйл"),
-    (nk) => nk.includes("имэйл"),
-    (nk) => nk.includes("email"),
-    "и-мэйл хаяг",
-    "email",
-  ]);
+.small {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: #727272;
+  margin: 0 0 18px 0;
 }
 
-function maskEmail(email) {
-  const e = clean(email);
-  if (!e || !e.includes("@")) return "";
-  const [name, domain] = e.split("@");
-  if (name.length <= 2) return `${name[0] || ""}***@${domain}`;
-  return `${name.slice(0, 2)}***@${domain}`;
+.input-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.16);
+  padding: 10px 0 12px;
+  margin-bottom: 26px;
 }
 
-// ===== LOAD SHEET =====
-async function loadSheet() {
-  const auth = new JWT({
-    email: creds.client_email,
-    key: creds.private_key,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-
-  const doc = new GoogleSpreadsheet(SHEET_ID, auth);
-  await doc.loadInfo();
-  return doc;
+.input-line span {
+  font-size: 18px;
+  color: #b8b8b8;
+  white-space: nowrap;
 }
 
-// ===== FIND USER =====
-async function findUserByPhone(phone) {
-  const doc = await loadSheet();
-  const sheet = doc.sheetsByIndex[0];
-  const rows = await sheet.getRows();
+.input-line input {
+  background: none;
+  border: none;
+  outline: none;
+  color: white;
+  font-size: 18px;
+  width: 100%;
+  letter-spacing: 0.08em;
+  padding: 0;
+}
 
-  const target = normalizePhone(phone);
-  console.log("Searching phone:", target);
-  console.log("Rows count:", rows.length);
+.input-line input::placeholder {
+  color: rgba(255,255,255,0.25);
+}
 
-  const found = rows.find((row) => {
-    const rowPhone = normalizePhone(getPhoneFromRow(row));
-    return rowPhone && rowPhone === target;
-  });
+.btn {
+  width: 100%;
+  height: 64px;
+  background: #f3f3f3;
+  color: #111;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.28em;
+  cursor: pointer;
+  transition: 0.2s;
+}
 
-  if (found) {
-    console.log("User found:", {
-      lastname: getLastnameFromRow(found),
-      firstname: getFirstnameFromRow(found),
-      phone: getPhoneFromRow(found),
-      email: getEmailFromRow(found),
-      membership: getMembershipFromRow(found),
-    });
-  } else if (rows[0]) {
-    console.log("First row headers:", Object.keys(rowToObj(rows[0])));
+.btn:hover {
+  opacity: 0.92;
+}
+
+.error {
+  color: #ff6b6b;
+  margin: -8px 0 14px 0;
+  font-size: 14px;
+}
+
+/* ===== GENERIC ===== */
+
+.header {
+  padding: 18px 40px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.container {
+  padding: 40px;
+}
+
+/* ===== LOGIN RESPONSIVE ===== */
+
+@media (max-width: 1100px) {
+  .login-container {
+    grid-template-columns: 1fr;
+    row-gap: 48px;
+    max-width: 760px;
+    padding: 72px 32px;
   }
 
-  return found || null;
+  .login-right {
+    max-width: 420px;
+  }
+
+  .title {
+    font-size: 56px;
+  }
 }
 
-// ===== SMTP / EMAIL =====
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_PORT === 587,
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-});
-
-async function sendOtpEmail(toEmail, otp, firstname = "") {
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    throw new Error("SMTP тохиргоо дутуу байна");
+@media (max-width: 640px) {
+  .login-container {
+    padding: 48px 20px;
   }
 
-  const name = clean(firstname) || "Хэрэглэгч";
+  .title {
+    font-size: 42px;
+  }
 
-  const info = await transporter.sendMail({
-    from: `"Lexus Owners" <${SMTP_USER}>`,
-    to: clean(toEmail),
-    subject: "Lexus Owners нэвтрэх код",
-    html: `
-      <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.6;">
-        <h2 style="margin-bottom: 12px;">Lexus Owners</h2>
-        <p>Сайн байна уу, ${name}</p>
-        <p>Таны нэвтрэх нэг удаагийн баталгаажуулах код:</p>
-        <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; margin: 18px 0;">
-          ${otp}
-        </div>
-        <p>Энэ кодыг бусдад бүү дамжуулаарай.</p>
-      </div>
-    `,
-  });
+  .desc {
+    font-size: 15px;
+  }
 
-  console.log("EMAIL SENT:", info.messageId);
-  return info;
+  .btn {
+    height: 58px;
+    font-size: 12px;
+  }
 }
 
-// ===== HEALTH CHECK =====
-app.get("/", (req, res) => {
-  res.send("Lexus Owners Backend OK 🚗");
-});
+/* ===== HOME PAGE ===== */
 
-// ===== OPTIONAL SMTP TEST =====
-app.get("/smtp-test", async (req, res) => {
-  try {
-    await transporter.verify();
-    return res.json({
-      success: true,
-      message: "SMTP OK",
-    });
-  } catch (e) {
-    console.error("SMTP TEST ERROR:", e);
-    return res.status(500).json({
-      success: false,
-      message: "SMTP алдаа",
-      error: e.message || String(e),
-    });
+.home-page {
+  min-height: 100vh;
+  position: relative;
+  background: #131313;
+  color: #f5f5f5;
+  overflow-x: hidden;
+  font-family: "Inter", sans-serif;
+}
+
+.home-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255,255,255,0.05), transparent 30%),
+    radial-gradient(circle at 70% 35%, rgba(255,255,255,0.04), transparent 32%),
+    linear-gradient(to bottom, #131313, #111111 40%, #131313 100%);
+  pointer-events: none;
+}
+
+.home-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 56px;
+  background: rgba(14, 14, 14, 0.72);
+  backdrop-filter: blur(16px);
+}
+
+.home-logo {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.home-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.home-nav-links a {
+  color: rgba(255,255,255,0.45);
+  text-decoration: none;
+  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: 0.2s ease;
+}
+
+.home-nav-links a:hover,
+.home-nav-links a.active {
+  color: #ffffff;
+}
+
+.home-account-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff;
+  padding: 10px 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.home-main {
+  position: relative;
+  z-index: 2;
+  padding: 56px;
+}
+
+.home-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 40px;
+  margin-bottom: 72px;
+}
+
+.home-hero-left {
+  max-width: 820px;
+}
+
+.verified-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(255,255,255,0.58);
+}
+
+.verified-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.home-title {
+  margin: 0;
+  font-size: 78px;
+  line-height: 0.92;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+}
+
+.summary-card {
+  width: 320px;
+  background: #1b1b1b;
+  padding: 28px;
+  flex-shrink: 0;
+}
+
+.summary-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.summary-label {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(255,255,255,0.4);
+}
+
+.summary-value {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.summary-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+  margin: 18px 0;
+}
+
+.entry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+  margin-bottom: 96px;
+}
+
+.entry-card {
+  position: relative;
+  min-height: 420px;
+  background: #1b1b1b;
+  padding: 34px;
+  text-decoration: none;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+
+.entry-card:hover {
+  background: #252525;
+  transform: translateY(-2px);
+}
+
+.entry-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.entry-icon {
+  font-size: 28px;
+  opacity: 0.9;
+}
+
+.entry-number {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(255,255,255,0.4);
+}
+
+.entry-bottom h2 {
+  margin: 0 0 14px;
+  font-size: 34px;
+  line-height: 0.95;
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+}
+
+.entry-bottom p {
+  margin: 0;
+  max-width: 230px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: rgba(255,255,255,0.62);
+}
+
+.entry-line {
+  width: 100%;
+  height: 1px;
+  background: rgba(255,255,255,0.2);
+  margin-top: 28px;
+}
+
+.home-feature {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 0;
+  align-items: center;
+  margin-bottom: 40px;
+}
+
+.feature-image {
+  min-height: 460px;
+  background:
+    linear-gradient(to right, rgba(19,19,19,0.2), rgba(19,19,19,0.7)),
+    radial-gradient(circle at 40% 40%, rgba(255,255,255,0.09), transparent 30%),
+    #1a1a1a;
+}
+
+.feature-content {
+  margin-left: -54px;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+
+.feature-content h3 {
+  margin: 0 0 20px;
+  font-size: 64px;
+  line-height: 0.95;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
+}
+
+.feature-content p {
+  margin: 0 0 28px;
+  max-width: 470px;
+  font-size: 18px;
+  line-height: 1.7;
+  color: rgba(255,255,255,0.66);
+}
+
+.feature-btn {
+  background: #fff;
+  color: #111;
+  border: none;
+  padding: 16px 26px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .home-hero {
+    flex-direction: column;
+    align-items: flex-start;
   }
-});
 
-// ===== CHECK PHONE =====
-app.get("/check-phone", async (req, res) => {
-  try {
-    const { phone } = req.query;
-
-    if (!phone) {
-      return res.json({
-        success: false,
-        message: "Утас оруулаагүй байна",
-      });
-    }
-
-    const found = await findUserByPhone(phone);
-
-    if (!found) {
-      return res.json({
-        success: false,
-        message: "Бүртгэлгүй хэрэглэгч",
-      });
-    }
-
-    const membership = getMembershipFromRow(found);
-
-    if (!isMembershipActive(membership)) {
-      return res.json({
-        success: false,
-        message: "Гишүүнчлэл хүчингүй",
-      });
-    }
-
-    return res.json({
-      success: true,
-      membership,
-      user: {
-        model: getModelFromRow(found),
-        ownerDate: getOwnerDateFromRow(found),
-        lastname: getLastnameFromRow(found),
-        firstname: getFirstnameFromRow(found),
-        phone: getPhoneFromRow(found),
-        email: getEmailFromRow(found),
-        membership,
-      },
-    });
-  } catch (e) {
-    console.error("CHECK PHONE ERROR:", e);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server алдаа",
-      error: e.message || String(e),
-    });
+  .entry-grid {
+    grid-template-columns: 1fr;
   }
-});
 
-// ===== SEND OTP BY EMAIL =====
-app.get("/send-otp", async (req, res) => {
-  try {
-    const { phone } = req.query;
-
-    if (!phone) {
-      return res.json({
-        success: false,
-        message: "Утас оруулаагүй байна",
-      });
-    }
-
-    const inputPhone = normalizePhone(phone);
-    const found = await findUserByPhone(inputPhone);
-
-    if (!found) {
-      return res.json({
-        success: false,
-        message: "Бүртгэлгүй хэрэглэгч",
-      });
-    }
-
-    const membership = getMembershipFromRow(found);
-    console.log("MEMBERSHIP:", membership);
-
-    if (!isMembershipActive(membership)) {
-      return res.json({
-        success: false,
-        message: "Гишүүнчлэл хүчингүй",
-      });
-    }
-
-    const email = getEmailFromRow(found);
-
-    if (!email) {
-      return res.json({
-        success: false,
-        message: "И-мэйл хаяг бүртгэлгүй байна",
-      });
-    }
-
-    const otp = generateOtp();
-    otpStore.set(inputPhone, otp);
-
-    console.log("OTP:", inputPhone, otp);
-    console.log("SEND TO EMAIL:", email);
-
-    await sendOtpEmail(email, otp, getFirstnameFromRow(found));
-
-    return res.json({
-      success: true,
-      message: "OTP код и-мэйлээр илгээгдлээ",
-      emailMasked: maskEmail(email),
-    });
-  } catch (e) {
-    console.error("SEND OTP ERROR:", e);
-
-    return res.status(500).json({
-      success: false,
-      message: "OTP илгээж чадсангүй",
-      error: e.message || String(e),
-    });
+  .home-feature {
+    grid-template-columns: 1fr;
+    gap: 28px;
   }
-});
 
-// ===== VERIFY OTP =====
-app.get("/verify-otp", async (req, res) => {
-  try {
-    const { phone, otp } = req.query;
-
-    const p = normalizePhone(phone);
-    const o = clean(otp);
-
-    if (!p || !o) {
-      return res.json({
-        success: false,
-        message: "Мэдээлэл дутуу",
-      });
-    }
-
-    if (!otpStore.has(p)) {
-      return res.json({
-        success: false,
-        message: "OTP хугацаа дууссан",
-      });
-    }
-
-    if (otpStore.get(p) !== o) {
-      return res.json({
-        success: false,
-        message: "OTP код буруу",
-      });
-    }
-
-    otpStore.delete(p);
-
-    const found = await findUserByPhone(p);
-
-    if (!found) {
-      return res.json({
-        success: false,
-        message: "Бүртгэлгүй хэрэглэгч",
-      });
-    }
-
-    const membership = getMembershipFromRow(found);
-
-    if (!isMembershipActive(membership)) {
-      return res.json({
-        success: false,
-        message: "Гишүүнчлэл хүчингүй",
-      });
-    }
-
-    return res.json({
-      success: true,
-      user: {
-        model: getModelFromRow(found),
-        ownerDate: getOwnerDateFromRow(found),
-        lastname: getLastnameFromRow(found),
-        firstname: getFirstnameFromRow(found),
-        phone: getPhoneFromRow(found),
-        email: getEmailFromRow(found),
-        membership,
-      },
-    });
-  } catch (e) {
-    console.error("VERIFY OTP ERROR:", e);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server алдаа",
-      error: e.message || String(e),
-    });
+  .feature-content {
+    margin-left: 0;
   }
-});
 
-// ===== START SERVER =====
-app.listen(PORT, () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
-});
+  .home-title {
+    font-size: 56px;
+  }
+}
+
+@media (max-width: 768px) {
+  .home-nav,
+  .home-main {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .home-nav {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .home-nav-links {
+    width: 100%;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .home-title {
+    font-size: 42px;
+  }
+
+  .summary-card {
+    width: 100%;
+  }
+
+  .entry-card {
+    min-height: 320px;
+  }
+
+  .feature-content h3 {
+    font-size: 42px;
+  }
+
+  .feature-content p {
+    font-size: 16px;
+  }
+}
+
+/* ===== PROFILE PAGE ===== */
+
+.profile-page {
+  min-height: 100vh;
+  position: relative;
+  background: #131313;
+  color: #f2f2f2;
+  overflow-x: hidden;
+  font-family: "Inter", sans-serif;
+}
+
+.profile-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255,255,255,0.04), transparent 22%),
+    linear-gradient(to bottom, rgba(255,255,255,0.02), transparent 20%),
+    #131313;
+  pointer-events: none;
+}
+
+.profile-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26px 36px;
+  background: rgba(14, 14, 14, 0.72);
+  backdrop-filter: blur(16px);
+}
+
+.profile-logo {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.profile-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.profile-nav-links a {
+  color: rgba(255,255,255,0.48);
+  text-decoration: none;
+  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 700;
+  transition: 0.2s ease;
+}
+
+.profile-nav-links a:hover,
+.profile-nav-links a.active {
+  color: #fff;
+  border-bottom: 1px solid #fff;
+  padding-bottom: 4px;
+}
+
+.profile-account-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff;
+  padding: 10px 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.profile-main {
+  position: relative;
+  z-index: 2;
+  padding: 34px 36px 80px;
+}
+
+.profile-hero {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 24px;
+  margin-bottom: 42px;
+}
+
+.profile-eyebrow {
+  margin: 0 0 18px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4em;
+  color: rgba(255,255,255,0.42);
+}
+
+.profile-name {
+  margin: 0;
+  font-size: 64px;
+  line-height: 0.95;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
+  color: #fff;
+}
+
+.profile-owner-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.profile-owner-line {
+  width: 38px;
+  height: 1px;
+  background: #fff;
+  display: inline-block;
+}
+
+.profile-owner-row p {
+  margin: 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(255,255,255,0.58);
+}
+
+.profile-hero-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.profile-mini-label {
+  margin: 0 0 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: rgba(255,255,255,0.4);
+}
+
+.profile-membership-id {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #fff;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 0.95fr);
+  gap: 32px;
+  align-items: stretch;
+}
+
+.vehicle-card {
+  position: relative;
+  min-height: 450px;
+  background:
+    linear-gradient(to bottom, rgba(0,0,0,0.14), rgba(0,0,0,0.5)),
+    radial-gradient(circle at 60% 35%, rgba(255,255,255,0.12), transparent 26%),
+    linear-gradient(135deg, #1b1b1b 0%, #101010 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 34px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.vehicle-card-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,0.05), transparent 30%),
+    linear-gradient(to bottom right, transparent 40%, rgba(255,255,255,0.03));
+  pointer-events: none;
+}
+
+.vehicle-top,
+.vehicle-bottom {
+  position: relative;
+  z-index: 2;
+}
+
+.vehicle-top h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+}
+
+.vehicle-top p {
+  margin: 0;
+  color: rgba(255,255,255,0.58);
+  font-size: 16px;
+}
+
+.vehicle-bottom h3 {
+  margin: 0 0 18px;
+  font-size: 60px;
+  line-height: 0.95;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
+}
+
+.vehicle-meta-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 26px;
+  flex-wrap: wrap;
+}
+
+.vehicle-meta-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: rgba(255,255,255,0.42);
+}
+
+.vehicle-meta-row strong {
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+.vehicle-outline-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  padding: 12px 22px;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.vehicle-outline-btn:hover {
+  background: #fff;
+  color: #111;
+}
+
+.profile-side {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.contact-card {
+  background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.05);
+  padding: 34px;
+  min-height: 220px;
+}
+
+.contact-icon {
+  font-size: 24px;
+  margin-bottom: 28px;
+  color: rgba(255,255,255,0.72);
+}
+
+.contact-block + .contact-block {
+  margin-top: 30px;
+}
+
+.contact-value {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+}
+
+.contact-email {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.4;
+}
+
+.membership-card {
+  background: #f1f1f1;
+  color: #111;
+  padding: 34px;
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.membership-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.membership-badge {
+  font-size: 18px;
+}
+
+.membership-legacy {
+  font-size: 24px;
+  font-style: italic;
+  font-weight: 800;
+}
+
+.membership-card h4 {
+  margin: 18px 0 0;
+  font-size: 46px;
+  line-height: 0.9;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+}
+
+.membership-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.membership-bottom-row p {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.membership-bottom-row span {
+  font-size: 24px;
+}
+
+.profile-info-grid {
+  margin-top: 44px;
+  padding-top: 34px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 36px;
+}
+
+.info-column h5 {
+  margin: 0 0 18px;
+  font-size: 12px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+}
+
+.info-column ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.info-column li {
+  color: rgba(255,255,255,0.64);
+  font-size: 16px;
+  line-height: 2;
+}
+
+.profile-concierge-cta {
+  margin-top: 60px;
+  padding-top: 44px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.profile-concierge-copy h3 {
+  margin: 0 0 12px;
+  font-size: 42px;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+}
+
+.profile-concierge-copy p {
+  margin: 0;
+  max-width: 620px;
+  font-size: 18px;
+  line-height: 1.7;
+  color: rgba(255,255,255,0.62);
+}
+
+.profile-cta-btn {
+  background: #f1f1f1;
+  color: #111;
+  text-decoration: none;
+  padding: 18px 26px;
+  min-width: 250px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.profile-footer {
+  padding: 70px 36px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.profile-footer-logo {
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+}
+
+.profile-footer-links {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.profile-footer-links a {
+  color: rgba(255,255,255,0.45);
+  text-decoration: none;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.profile-footer-copy {
+  color: rgba(255,255,255,0.35);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 1100px) {
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-concierge-cta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-name {
+    font-size: 48px;
+  }
+
+  .vehicle-bottom h3 {
+    font-size: 44px;
+  }
+}
+
+@media (max-width: 820px) {
+  .profile-nav {
+    padding: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .profile-nav-links {
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .profile-main {
+    padding: 22px 20px 60px;
+  }
+
+  .profile-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-hero-right {
+    align-items: flex-start;
+  }
+
+  .profile-name {
+    font-size: 40px;
+  }
+
+  .vehicle-card {
+    min-height: 360px;
+    padding: 24px;
+  }
+
+  .vehicle-bottom h3 {
+    font-size: 36px;
+  }
+
+  .contact-value {
+    font-size: 26px;
+  }
+
+  .contact-email {
+    font-size: 18px;
+  }
+
+  .membership-card h4 {
+    font-size: 34px;
+  }
+
+  .profile-concierge-copy h3 {
+    font-size: 32px;
+  }
+
+  .profile-concierge-copy p {
+    font-size: 16px;
+  }
+}
