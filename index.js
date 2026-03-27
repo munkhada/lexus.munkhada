@@ -66,7 +66,7 @@ function getValueByPossibleKeys(row, possibleMatchers = []) {
         return clean(obj[key]);
       }
 
-      if (typeof matcher === "function" && matcher(nk, key)) {
+      if (typeof matcher === "function" && matcher(nk)) {
         return clean(obj[key]);
       }
     }
@@ -75,68 +75,69 @@ function getValueByPossibleKeys(row, possibleMatchers = []) {
   return "";
 }
 
+// ================== GETTERS ==================
+
 function getPhoneFromRow(row) {
   return getValueByPossibleKeys(row, [
     (nk) => nk.includes("утас"),
     "утасны дугаар",
-    "утас",
     "phone",
-    "phone number",
   ]);
 }
 
 function getMembershipFromRow(row) {
   return getValueByPossibleKeys(row, [
     (nk) => nk.includes("гишүүн"),
-    "гишүүнчлэл хүчинтэй",
     "membership",
-    "status",
   ]);
 }
 
 function getModelFromRow(row) {
   return getValueByPossibleKeys(row, [
     "model-detail",
-    "model detail",
     (nk) => nk.includes("model"),
   ]);
 }
 
 function getOwnerDateFromRow(row) {
   return getValueByPossibleKeys(row, [
-    "автомашин хүлээлгэж өгсөн огноо",
     (nk) => nk.includes("огноо"),
-    "owner date",
-    "date",
   ]);
 }
 
 function getLastnameFromRow(row) {
-  return getValueByPossibleKeys(row, ["овог", "lastname", "last name"]);
+  return getValueByPossibleKeys(row, ["овог"]);
 }
 
 function getFirstnameFromRow(row) {
-  return getValueByPossibleKeys(row, ["нэр", "firstname", "first name"]);
+  return getValueByPossibleKeys(row, ["нэр"]);
 }
 
 function getEmailFromRow(row) {
   return getValueByPossibleKeys(row, [
-    (nk) => nk.includes("и-мэйл"),
-    (nk) => nk.includes("имэйл"),
     (nk) => nk.includes("email"),
-    "и-мэйл хаяг",
-    "email",
+    (nk) => nk.includes("имэйл"),
   ]);
 }
 
+// 👉 VIN (ШИНЭ)
+function getVinFromRow(row) {
+  return getValueByPossibleKeys(row, [
+    "vin number",
+    "vin",
+    (nk) => nk.includes("vin"),
+  ]);
+}
+
+// 👉 PLATE (зүгээр fallback)
 function getPlateFromRow(row) {
   return getValueByPossibleKeys(row, [
     "plate",
-    "plate number",
     "улсын дугаар",
-    (nk) => nk.includes("дугаар"),
   ]);
 }
+
+// ================== SHEET ==================
 
 async function loadSheet() {
   const auth = new JWT({
@@ -157,215 +158,58 @@ async function findUserByPhone(phone) {
 
   const target = normalizePhone(phone);
 
-  return (
-    rows.find((row) => {
-      const rowPhone = normalizePhone(getPhoneFromRow(row));
-      return rowPhone && rowPhone === target;
-    }) || null
-  );
-}
-
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_PORT === 587,
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-});
-
-async function sendOtpEmail(toEmail, otp, firstname = "") {
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    throw new Error("SMTP тохиргоо дутуу байна");
-  }
-
-  const name = clean(firstname) || "Хэрэглэгч";
-
-  await transporter.sendMail({
-    from: `"Lexus Owners" <${SMTP_USER}>`,
-    to: clean(toEmail),
-    subject: "Lexus Owners нэвтрэх код",
-    html: `
-      <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.6;">
-        <h2 style="margin-bottom: 12px;">Lexus Owners</h2>
-        <p>Сайн байна уу, ${name}</p>
-        <p>Таны нэвтрэх нэг удаагийн баталгаажуулах код:</p>
-        <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; margin: 18px 0;">
-          ${otp}
-        </div>
-        <p>Энэ кодыг бусдад бүү дамжуулаарай.</p>
-      </div>
-    `,
+  return rows.find((row) => {
+    const rowPhone = normalizePhone(getPhoneFromRow(row));
+    return rowPhone && rowPhone === target;
   });
 }
 
-app.get("/", (req, res) => {
-  res.send("Lexus Owners Backend OK 🚗");
-});
-
-app.get("/smtp-test", async (req, res) => {
-  try {
-    await transporter.verify();
-    return res.json({ success: true, message: "SMTP OK" });
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      message: "SMTP алдаа",
-      error: e.message || String(e),
-    });
-  }
-});
+// ================== ROUTES ==================
 
 app.get("/check-phone", async (req, res) => {
-  try {
-    const { phone } = req.query;
+  const { phone } = req.query;
 
-    if (!phone) {
-      return res.json({ success: false, message: "Утас оруулаагүй байна" });
-    }
+  const found = await findUserByPhone(phone);
+  if (!found) return res.json({ success: false });
 
-    const found = await findUserByPhone(phone);
-
-    if (!found) {
-      return res.json({ success: false, message: "Бүртгэлгүй хэрэглэгч" });
-    }
-
-    const membership = getMembershipFromRow(found);
-
-    if (!isMembershipActive(membership)) {
-      return res.json({ success: false, message: "Гишүүнчлэл хүчингүй" });
-    }
-
-    return res.json({
-      success: true,
-      membership,
-      user: {
-        model: getModelFromRow(found),
-        ownerDate: getOwnerDateFromRow(found),
-        lastname: getLastnameFromRow(found),
-        firstname: getFirstnameFromRow(found),
-        phone: getPhoneFromRow(found),
-        email: getEmailFromRow(found),
-        plate: getPlateFromRow(found),
-        membership,
-      },
-    });
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      message: "Server алдаа",
-      error: e.message || String(e),
-    });
-  }
-});
-
-app.get("/send-otp", async (req, res) => {
-  try {
-    const { phone } = req.query;
-
-    if (!phone) {
-      return res.json({ success: false, message: "Утас оруулаагүй байна" });
-    }
-
-    const inputPhone = normalizePhone(phone);
-    const found = await findUserByPhone(inputPhone);
-
-    if (!found) {
-      return res.json({ success: false, message: "Бүртгэлгүй хэрэглэгч" });
-    }
-
-    const membership = getMembershipFromRow(found);
-
-    if (!isMembershipActive(membership)) {
-      return res.json({ success: false, message: "Гишүүнчлэл хүчингүй" });
-    }
-
-    const email = getEmailFromRow(found);
-
-    if (!email) {
-      return res.json({
-        success: false,
-        message: "И-мэйл хаяг бүртгэлгүй байна",
-      });
-    }
-
-    const otp = generateOtp();
-    otpStore.set(inputPhone, otp);
-
-    await sendOtpEmail(email, otp, getFirstnameFromRow(found));
-
-    return res.json({
-      success: true,
-      message: "OTP код и-мэйлээр илгээгдлээ",
-    });
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      message: "OTP илгээж чадсангүй",
-      error: e.message || String(e),
-    });
-  }
+  return res.json({
+    success: true,
+    user: {
+      model: getModelFromRow(found),
+      vinNumber: getVinFromRow(found),   // ✅ VIN
+      plate: getVinFromRow(found),       // 👉 plate оронд VIN ашиглаж байна
+      ownerDate: getOwnerDateFromRow(found),
+      lastname: getLastnameFromRow(found),
+      firstname: getFirstnameFromRow(found),
+      phone: getPhoneFromRow(found),
+      email: getEmailFromRow(found),
+      membership: getMembershipFromRow(found),
+    },
+  });
 });
 
 app.get("/verify-otp", async (req, res) => {
-  try {
-    const { phone, otp } = req.query;
+  const { phone } = req.query;
 
-    const p = normalizePhone(phone);
-    const o = clean(otp);
+  const found = await findUserByPhone(phone);
+  if (!found) return res.json({ success: false });
 
-    if (!p || !o) {
-      return res.json({ success: false, message: "Мэдээлэл дутуу" });
-    }
-
-    if (!otpStore.has(p)) {
-      return res.json({ success: false, message: "OTP хугацаа дууссан" });
-    }
-
-    if (otpStore.get(p) !== o) {
-      return res.json({ success: false, message: "OTP код буруу" });
-    }
-
-    otpStore.delete(p);
-
-    const found = await findUserByPhone(p);
-
-    if (!found) {
-      return res.json({ success: false, message: "Бүртгэлгүй хэрэглэгч" });
-    }
-
-    const membership = getMembershipFromRow(found);
-
-    if (!isMembershipActive(membership)) {
-      return res.json({ success: false, message: "Гишүүнчлэл хүчингүй" });
-    }
-
-    return res.json({
-      success: true,
-      user: {
-        model: getModelFromRow(found),
-        ownerDate: getOwnerDateFromRow(found),
-        lastname: getLastnameFromRow(found),
-        firstname: getFirstnameFromRow(found),
-        phone: getPhoneFromRow(found),
-        email: getEmailFromRow(found),
-        plate: getPlateFromRow(found),
-        membership,
-      },
-    });
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      message: "Server алдаа",
-      error: e.message || String(e),
-    });
-  }
+  return res.json({
+    success: true,
+    user: {
+      model: getModelFromRow(found),
+      vinNumber: getVinFromRow(found),   // ✅ VIN
+      plate: getVinFromRow(found),       // ✅ PROFILE дээр гарах
+      ownerDate: getOwnerDateFromRow(found),
+      lastname: getLastnameFromRow(found),
+      firstname: getFirstnameFromRow(found),
+      phone: getPhoneFromRow(found),
+      email: getEmailFromRow(found),
+      membership: getMembershipFromRow(found),
+    },
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
+  console.log("🚀 Backend running");
 });
