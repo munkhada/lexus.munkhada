@@ -115,8 +115,12 @@ function getFirstnameFromRow(row) {
 
 function getEmailFromRow(row) {
   return getValueByPossibleKeys(row, [
-    (nk) => nk.includes("email"),
+    (nk) => nk.includes("и-мэйл"),
     (nk) => nk.includes("имэйл"),
+    (nk) => nk.includes("email"),
+    "и-мэйл хаяг",
+    "имэйл хаяг",
+    "email",
   ]);
 }
 
