@@ -123,6 +123,13 @@ function getEmailFromRow(row) {
     "email",
   ]);
 }
+function getAdvisorFromRow(row) {
+  return getValueByPossibleKeys(row, [
+    "лексусын төлөөлөгч",
+    "төлөөлөгч",
+    (nk) => nk.includes("төлөөлөгч"),
+  ]);
+}
 
 // 👉 VIN (ШИНЭ)
 function getVinFromRow(row) {
@@ -188,6 +195,7 @@ app.get("/check-phone", async (req, res) => {
       phone: getPhoneFromRow(found),
       email: getEmailFromRow(found),
       membership: getMembershipFromRow(found),
+      advisor: getAdvisorFromRow(found),
     },
   });
 });
@@ -210,6 +218,7 @@ app.get("/verify-otp", async (req, res) => {
       phone: getPhoneFromRow(found),
       email: getEmailFromRow(found),
       membership: getMembershipFromRow(found),
+      advisor: getAdvisorFromRow(found),
     },
   });
 });
